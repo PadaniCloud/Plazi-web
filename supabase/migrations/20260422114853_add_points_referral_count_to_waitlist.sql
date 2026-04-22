@@ -1,0 +1,3 @@
+ALTER TABLE waitlist
+  ADD COLUMN points         INT NOT NULL DEFAULT 0,
+  ADD COLUMN referral_count INT NOT NULL DEFAULT 0;
