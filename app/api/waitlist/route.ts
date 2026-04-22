@@ -1,6 +1,10 @@
 import { NextRequest } from 'next/server'
+import { Resend } from 'resend'
 import { createServerClient } from '@/lib/supabase'
 import { generateOwnCode } from '@/lib/waitlist'
+import { ConfirmationEmail } from '@/lib/emails/confirmation'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 const CONVOCATORIA_MAP: Record<string, string> = {
   C1: 'C1',
@@ -42,6 +46,19 @@ export async function POST(req: NextRequest) {
     }
     return Response.json({ error: 'server_error' }, { status: 500 })
   }
+
+  const { count: position } = await supabase
+    .from('waitlist')
+    .select('*', { count: 'exact', head: true })
+
+  resend.emails.send({
+    from: 'Plazi <hola@plazi.es>',
+    to: email,
+    subject: 'Ya estás en la lista — Plazi',
+    react: ConfirmationEmail({ name, position: position ?? 1, own_code }),
+  }).catch((err) => {
+    console.error('[waitlist] Resend error:', err)
+  })
 
   return Response.json({ success: true, own_code })
 }
