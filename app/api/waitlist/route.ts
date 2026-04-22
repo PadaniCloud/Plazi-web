@@ -51,13 +51,18 @@ export async function POST(req: NextRequest) {
     .from('waitlist')
     .select('*', { count: 'exact', head: true })
 
+  console.log('[waitlist] RESEND_API_KEY prefix:', process.env.RESEND_API_KEY?.slice(0, 10))
+  console.log('[waitlist] Intentando enviar email a', email)
+
   resend.emails.send({
     from: 'Plazi <hola@plazi.es>',
     to: email,
     subject: 'Ya estás en la lista — Plazi',
     react: ConfirmationEmail({ name, position: position ?? 1, own_code }),
+  }).then((result) => {
+    console.log('[waitlist] Resend result:', JSON.stringify(result))
   }).catch((err) => {
-    console.error('[waitlist] Resend error:', err)
+    console.error('[waitlist] Resend error:', JSON.stringify(err, null, 2), err)
   })
 
   return Response.json({ success: true, own_code })
