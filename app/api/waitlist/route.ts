@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { Resend } from 'resend'
+import { render } from '@react-email/render'
 import { createServerClient } from '@/lib/supabase'
 import { generateOwnCode } from '@/lib/waitlist'
 import { ConfirmationEmail } from '@/lib/emails/confirmation'
@@ -54,16 +55,21 @@ export async function POST(req: NextRequest) {
   console.log('[waitlist] RESEND_API_KEY prefix:', process.env.RESEND_API_KEY?.slice(0, 10))
   console.log('[waitlist] Intentando enviar email a', email)
 
-  resend.emails.send({
-    from: 'Plazi <hola@plazi.es>',
-    to: email,
-    subject: 'Ya estás en la lista — Plazi',
-    react: ConfirmationEmail({ name, position: position ?? 1, own_code }),
-  }).then((result) => {
-    console.log('[waitlist] Resend result:', JSON.stringify(result))
-  }).catch((err) => {
-    console.error('[waitlist] Resend error:', JSON.stringify(err, null, 2), err)
-  })
+  render(ConfirmationEmail({ name, position: position ?? 1, own_code }))
+    .then((html) =>
+      resend.emails.send({
+        from: 'Plazi <hola@plazi.es>',
+        to: email,
+        subject: 'Ya estás en la lista — Plazi',
+        html,
+      })
+    )
+    .then((result) => {
+      console.log('[waitlist] Resend result:', JSON.stringify(result))
+    })
+    .catch((err) => {
+      console.error('[waitlist] Resend error:', JSON.stringify(err, null, 2), err)
+    })
 
   return Response.json({ success: true, own_code })
 }
