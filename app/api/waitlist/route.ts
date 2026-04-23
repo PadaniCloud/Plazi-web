@@ -1,13 +1,17 @@
 import { NextRequest } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
-import { createServerClient } from '@/lib/supabase'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
-const VALID_CONVOCATORIA = ['C1', 'C2'] as const
-const VALID_TIEMPO_PREP = ['nuevo', '6m', '1y', 'repetidor'] as const
+function generateOwnCode(name: string): string {
+  const prefix = name.slice(0, 3).toLowerCase().replace(/[^a-z]/g, 'a')
+  const suffix = Math.random().toString(36).slice(2, 6)
+  return prefix + suffix
+}
 
-function confirmationHtml(nombre: string, position: number, referralLink: string): string {
+function confirmationHtml(name: string, position: number, own_code: string): string {
+  const referralLink = `https://plazi.es/?ref=${own_code}`
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -23,13 +27,13 @@ function confirmationHtml(nombre: string, position: number, referralLink: string
 
           <p style="margin:0 0 32px;font-size:22px;font-weight:700;color:#1E3A8A;letter-spacing:-0.5px">Plazi</p>
 
-          <p style="margin:0 0 8px;font-size:16px;color:#111827">Hola ${nombre},</p>
+          <p style="margin:0 0 8px;font-size:16px;color:#111827">Hola ${name},</p>
           <p style="margin:0 0 24px;font-size:16px;color:#111827">
             Ya estás dentro. Eres el <strong style="color:#1E3A8A">#${position}</strong> en la lista.
           </p>
 
           <p style="margin:0 0 12px;font-size:15px;color:#374151">
-            Cada persona que se apunte con tu enlace suma <strong>+10 puntos</strong> a tu marcador. Los puestos que subes dependen de cuánta gente tienes por delante:
+            Cada persona que se apunte con tu enlace suma <strong>+10 puntos</strong> a tu marcador:
           </p>
 
           <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px">
@@ -62,81 +66,69 @@ function confirmationHtml(nombre: string, position: number, referralLink: string
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { nombre, email, convocatoria, tiempo_prep, referral_code } = body
+  const { name, email, convocatoria, referral_code } = body
 
-  if (!nombre?.trim() || !email?.trim() || !convocatoria || !tiempo_prep) {
+  if (!name?.trim() || !email?.trim() || !convocatoria) {
     return Response.json({ error: 'missing_fields' }, { status: 400 })
   }
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return Response.json({ error: 'invalid_email' }, { status: 400 })
-  }
+  const cleanName = name.trim()
+  const cleanEmail = email.toLowerCase().trim()
 
-  if (!VALID_CONVOCATORIA.includes(convocatoria)) {
-    return Response.json({ error: 'invalid_convocatoria' }, { status: 400 })
-  }
+  console.log('[waitlist] nuevo signup:', cleanEmail, 'referral_code:', referral_code ?? null)
 
-  if (!VALID_TIEMPO_PREP.includes(tiempo_prep)) {
-    return Response.json({ error: 'invalid_tiempo_prep' }, { status: 400 })
-  }
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
 
-  const normalizedEmail = email.toLowerCase().trim()
-  const normalizedNombre = nombre.trim()
-  const supabase = createServerClient()
+  const own_code = generateOwnCode(cleanName)
 
-  const { data: inserted, error } = await supabase
-    .from('waitlist')
-    .insert({
-      name: normalizedNombre,
-      email: normalizedEmail,
-      convocatoria,
-      experience: tiempo_prep,
-      referral_code: referral_code || null,
-    })
-    .select('own_code, points, created_at')
-    .single()
+  const { error: insertError } = await supabase.from('waitlist').insert({
+    name: cleanName,
+    email: cleanEmail,
+    convocatoria,
+    referral_code: referral_code || null,
+    own_code,
+  })
 
-  if (error) {
-    console.error('[waitlist] INSERT error:', error.code, error.message)
-    if (error.code === '23505') {
+  if (insertError) {
+    console.error('[waitlist] ERROR en insert:', insertError.message)
+    if (insertError.code === '23505') {
       return Response.json({ error: 'duplicate' }, { status: 409 })
     }
     return Response.json({ error: 'server_error' }, { status: 500 })
   }
 
-  // Credit the referrer atomically. Failure is silent — the insert already
-  // succeeded and must not be rolled back.
-  console.log('[waitlist] referral_code recibido:', referral_code)
+  console.log('[waitlist] insert OK:', own_code)
+
   if (referral_code) {
-    const { data, error: updateError } = await supabase.rpc(
-      'credit_referral',
-      { ref_code: referral_code }
-    )
-    console.log('[waitlist] rpc result:', JSON.stringify({ data, error: updateError }))
+    const { data: rowsAffected, error: rpcError } = await supabase.rpc('credit_referral', {
+      ref_code: referral_code,
+    })
+    if (rpcError) {
+      console.error('[waitlist] ERROR en credit_referral:', rpcError.message)
+    } else {
+      console.log('[waitlist] credit_referral:', referral_code, '→ filas afectadas', rowsAffected)
+    }
   }
 
-  // RANK() OVER (ORDER BY points DESC, created_at ASC):
-  // count rows that rank ahead = rows with more points, or same points and earlier created_at
-  const { count: ahead } = await supabase
+  const { count } = await supabase
     .from('waitlist')
     .select('*', { count: 'exact', head: true })
-    .or(
-      `points.gt.${inserted.points},and(points.eq.${inserted.points},created_at.lt.${inserted.created_at})`
-    )
+    .gt('points', 0)
 
-  const position = (ahead ?? 0) + 1
-  const own_code = inserted.own_code
-  const referral_link = `https://plazi.es/?ref=${own_code}`
+  const position = (count ?? 0) + 1
 
   resend.emails
     .send({
       from: 'Plazi <hola@plazi.es>',
-      to: normalizedEmail,
-      subject: `Ya estás en la lista, ${normalizedNombre} 👋`,
-      html: confirmationHtml(normalizedNombre, position, referral_link),
+      to: cleanEmail,
+      subject: `Ya estás en la lista, ${cleanName} 👋`,
+      html: confirmationHtml(cleanName, position, own_code),
     })
-    .then((result) => console.log('[waitlist] Resend result:', JSON.stringify(result)))
-    .catch((err) => console.error('[waitlist] Resend error:', err))
+    .then(() => console.log('[waitlist] email enviado a:', cleanEmail))
+    .catch((err) => console.error('[waitlist] ERROR en email:', err))
 
-  return Response.json({ position, referral_code: own_code, referral_link }, { status: 201 })
+  return Response.json({ success: true, own_code, position }, { status: 201 })
 }
