@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { waitUntil } from '@vercel/functions'
 
 function generateOwnCode(name: string): string {
   const prefix = name.slice(0, 3).toLowerCase().replace(/[^a-z]/g, 'a')
@@ -64,16 +65,24 @@ export async function POST(req: NextRequest) {
   const position = (count ?? 0) + 1
 
   const referralLink = `https://plazi.es/?ref=${own_code}`
-  fetch('https://oposapp.vercel.app/api/waitlist/send-welcome', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.INTERNAL_API_SECRET}`,
-    },
-    body: JSON.stringify({ name: cleanName, email: cleanEmail, position, referralLink }),
-  })
-    .then((r) => console.log('[waitlist] send-welcome:', r.status))
-    .catch((err) => console.error('[waitlist] ERROR en send-welcome:', err))
+  waitUntil(
+    fetch('https://oposapp.vercel.app/api/waitlist/send-welcome', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.INTERNAL_API_SECRET}`,
+      },
+      body: JSON.stringify({ name: cleanName, email: cleanEmail, position, referralLink }),
+    }).then(async (res) => {
+      if (!res.ok) {
+        console.error('[send-welcome] Error:', res.status, await res.text())
+      } else {
+        console.log('[send-welcome] OK para:', cleanEmail)
+      }
+    }).catch((err) => {
+      console.error('[send-welcome] Fetch failed:', err)
+    })
+  )
 
   return Response.json({ success: true, own_code, position }, { status: 201 })
 }
