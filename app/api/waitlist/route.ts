@@ -28,13 +28,17 @@ export async function POST(req: NextRequest) {
 
   const own_code = generateOwnCode(cleanName)
 
-  const { error: insertError } = await supabase.from('waitlist').insert({
-    name: cleanName,
-    email: cleanEmail,
-    convocatoria,
-    referral_code: referral_code || null,
-    own_code,
-  })
+  const { data: inserted, error: insertError } = await supabase
+    .from('waitlist')
+    .insert({
+      name: cleanName,
+      email: cleanEmail,
+      convocatoria,
+      referral_code: referral_code || null,
+      own_code,
+    })
+    .select('points, created_at')
+    .single()
 
   if (insertError) {
     console.error('[waitlist] ERROR en insert:', insertError.message)
@@ -57,12 +61,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const { count } = await supabase
+  // Misma query que /gracias: ranking real por points DESC, created_at ASC
+  const { count: aheadCount } = await supabase
     .from('waitlist')
     .select('*', { count: 'exact', head: true })
-    .gt('points', 0)
+    .or(
+      `points.gt.${inserted.points},and(points.eq.${inserted.points},created_at.lt.${inserted.created_at})`
+    )
 
-  const position = (count ?? 0) + 1
+  const position = (aheadCount ?? 0) + 1
 
   const referralLink = `https://plazi.es/?ref=${own_code}`
   waitUntil(
