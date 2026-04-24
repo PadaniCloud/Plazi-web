@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "../styles/tokens.css";
 
 :root {
   --bg: #080F1E;
@@ -156,6 +157,42 @@ h1 em { font-style: normal; color: var(--green); }
 .form-note a { color: var(--muted2); text-decoration: underline; }
 .form-error { font-size: 13px; color: #FCA5A5; margin-bottom: 8px; }
 .form-dup { font-size: 13px; color: var(--green); margin-bottom: 8px; }
+
+/* Waitlist success screen */
+.wl-success { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 8px 0; }
+.wl-pos {
+  font-family: var(--font-sora), 'Sora', sans-serif;
+  font-size: 52px; font-weight: 800; line-height: 1;
+  color: var(--green); margin-bottom: 8px;
+}
+.wl-title { font-family: var(--font-sora), 'Sora', sans-serif; font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+.wl-sub { font-size: 13px; color: var(--muted2); line-height: 1.55; margin-bottom: 16px; max-width: 280px; }
+.wl-ref-box {
+  width: 100%;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.wl-ref-url {
+  flex: 1; min-width: 0;
+  font-size: 12px; color: var(--muted2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wl-copy-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  background: var(--green); color: #052E1A;
+  border: none; border-radius: 7px;
+  font-size: 12px; font-weight: 700;
+  font-family: var(--font-sora), 'Sora', sans-serif;
+  cursor: pointer; transition: background .15s;
+}
+.wl-copy-btn:hover { background: #0EA572; }
+.wl-email-note { font-size: 11px; color: var(--muted); }
+.pills--wrap { flex-wrap: wrap; }
 
 .trust-row {
   display: flex; flex-wrap: wrap; justify-content: center;
